@@ -1,0 +1,327 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountType {
+  TRANSLATOR
+  CUSTOMER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  BLOCKED
+}
+
+enum CustomerRole {
+  INVESTIGATOR
+  INQUIRER
+  COURT
+  ADVOCATE
+  LAW_ENFORCEMENT
+  AGENCY_STAFF
+}
+
+enum MembershipStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+  REVOKED
+}
+
+enum OrganizationType {
+  LAW_ENFORCEMENT
+  COURT
+  BAR
+  AGENCY
+  OTHER
+}
+
+enum CheckStatus {
+  NONE
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum SlotKind {
+  AVAILABLE
+  BUSY
+}
+
+enum RequestStatus {
+  DRAFT
+  SENT
+  AWAITING_RESPONSE
+  CLARIFICATION_REQUESTED
+  CONFIRMED
+  DECLINED
+  CANCELLED
+  COMPLETED
+}
+
+enum OrderStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+model User {
+  id           String      @id @default(cuid())
+  email        String      @unique
+  passwordHash String
+  fullName     String
+  accountType  AccountType
+  status       UserStatus  @default(ACTIVE)
+  /// Секрет TOTP, зашифрован ключом FIELD_ENCRYPTION_KEY
+  mfaSecret    String?
+  mfaEnabled   Boolean     @default(false)
+  createdAt    DateTime    @default(now())
+
+  sessions       Session[]
+  membership     Membership?
+  profile        TranslatorProfile?
+  sentRequests   EngagementRequest[] @relation("customer")
+  notifications  Notification[]
+  calendarEvents CalendarEvent[]
+  orders         Order[]
+  messages       RequestMessage[]
+  auditLogs      AuditLog[]
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mfaPassed  Boolean  @default(false)
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  expiresAt  DateTime
+
+  @@index([userId])
+}
+
+model Organization {
+  id          String           @id @default(cuid())
+  name        String
+  type        OrganizationType
+  region      String?
+  createdAt   DateTime         @default(now())
+  memberships Membership[]
+  requests    EngagementRequest[]
+}
+
+/// Роль заказчика в контексте организации. До проверки администратором имеет статус PENDING.
+model Membership {
+  id                  String           @id @default(cuid())
+  userId              String           @unique
+  user                User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role                CustomerRole
+  status              MembershipStatus @default(PENDING)
+  organizationId      String?
+  organization        Organization?    @relation(fields: [organizationId], references: [id])
+  /// Организация и должность в том виде, как их указал пользователь
+  claimedOrganization String
+  position            String?
+  /// Сведения для проверки: служебный адрес, номер в реестре адвокатов и т. п.
+  evidence            String
+  reviewedById        String?
+  reviewedAt          DateTime?
+  reviewNote          String?
+  expiresAt           DateTime?
+  createdAt           DateTime         @default(now())
+}
+
+model TranslatorProfile {
+  id                  String      @id @default(cuid())
+  userId              String      @unique
+  user                User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName         String
+  region              String
+  city                String?
+  remote              Boolean     @default(false)
+  travelReady         Boolean     @default(false)
+  urgentReady         Boolean     @default(false)
+  summary             String      @default("")
+  experienceYears     Int?
+  specializations     String[]
+  formats             String[]
+  clientTypes         String[]
+  rateInfo            String?
+  paymentTerms        String?
+  contactPhone        String?
+  contactEmail        String?
+  /// Уровни раскрытия настраиваемых полей: { поле: Visibility }
+  visibility          Json        @default("{}")
+  published           Boolean     @default(false)
+  identityStatus      CheckStatus @default(NONE)
+  documentsStatus     CheckStatus @default(NONE)
+  qualificationStatus CheckStatus @default(NONE)
+  restricted          Boolean     @default(false)
+  restrictedReason    String?
+  updatedAt           DateTime    @updatedAt
+
+  languages      LanguagePair[]
+  qualifications Qualification[]
+  slots          AvailabilitySlot[]
+  requests       EngagementRequest[]
+
+  @@index([region])
+}
+
+model LanguagePair {
+  id            String            @id @default(cuid())
+  profileId     String
+  profile       TranslatorProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  source        String
+  target        String
+  bidirectional Boolean           @default(true)
+  level         String?
+  verified      Boolean           @default(false)
+
+  @@unique([profileId, source, target])
+  @@index([source, target])
+}
+
+model Qualification {
+  id        String            @id @default(cuid())
+  profileId String
+  profile   TranslatorProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  kind      String
+  title     String
+  issuer    String?
+  year      Int?
+  status    CheckStatus       @default(PENDING)
+  createdAt DateTime          @default(now())
+}
+
+model AvailabilitySlot {
+  id        String            @id @default(cuid())
+  profileId String
+  profile   TranslatorProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  startsAt  DateTime
+  endsAt    DateTime
+  kind      SlotKind
+  /// Слот занятости, созданный подтверждённым привлечением
+  requestId String?           @unique
+
+  @@index([profileId, startsAt])
+}
+
+model EngagementRequest {
+  id                 String             @id @default(cuid())
+  customerId         String
+  customer           User               @relation("customer", fields: [customerId], references: [id])
+  organizationId     String?
+  organization       Organization?      @relation(fields: [organizationId], references: [id])
+  profileId          String
+  profile            TranslatorProfile  @relation(fields: [profileId], references: [id])
+  eventType          String
+  sourceLang         String
+  targetLang         String
+  format             String
+  specialization     String?
+  startsAt           DateTime
+  durationMinutes    Int
+  remote             Boolean            @default(false)
+  region             String
+  /// Адрес проведения, зашифрован; переводчику раскрывается после подтверждения участия
+  locationEnc        String?
+  urgent             Boolean            @default(false)
+  requirements       String?
+  preparation        Boolean            @default(false)
+  technical          String?
+  department         String?
+  officialContact    String
+  internalRef        String?
+  status             RequestStatus      @default(DRAFT)
+  sentAt             DateTime?
+  respondedAt        DateTime?
+  appointmentNotedAt DateTime?
+  completedAt        DateTime?
+  closeReason        String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  messages RequestMessage[]
+  order    Order?
+  events   CalendarEvent[]
+
+  @@index([customerId, status])
+  @@index([profileId, status])
+}
+
+model RequestMessage {
+  id        String            @id @default(cuid())
+  requestId String
+  request   EngagementRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User              @relation(fields: [authorId], references: [id])
+  body      String
+  createdAt DateTime          @default(now())
+}
+
+model Order {
+  id           String             @id @default(cuid())
+  translatorId String
+  translator   User               @relation(fields: [translatorId], references: [id], onDelete: Cascade)
+  requestId    String?            @unique
+  request      EngagementRequest? @relation(fields: [requestId], references: [id])
+  title        String
+  client       String?
+  startsAt     DateTime?
+  amount       Int?
+  status       OrderStatus        @default(ACTIVE)
+  notes        String?
+  createdAt    DateTime           @default(now())
+}
+
+model CalendarEvent {
+  id        String             @id @default(cuid())
+  ownerId   String
+  owner     User               @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  title     String
+  startsAt  DateTime
+  endsAt    DateTime
+  requestId String?
+  request   EngagementRequest? @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  createdAt DateTime           @default(now())
+
+  @@index([ownerId, startsAt])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+}
+
+/// Журнал значимых действий. Записи только добавляются.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id])
+  action     String
+  objectType String?
+  objectId   String?
+  meta       Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([action, createdAt])
+  @@index([objectType, objectId])
+}
