@@ -230,6 +230,19 @@ function availableOn(p, dateStr) {
   return p.slots.some(([a, b]) => d >= dayOffset(a) && d < dayOffset(b + 1));
 }
 
+const ICONS = {
+  home: "M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
+  search: "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-3.5-3.5",
+  inbox: "M3 13h5l1.5 3h5l1.5-3h5M5.5 5h13l2.5 8v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6z",
+  briefcase: "M4 7h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zM9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M3 12h18",
+  calendar: "M5 5h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM4 10h16M8 3v4M16 3v4",
+  user: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0",
+  bell: "M6 16v-5a6 6 0 1 1 12 0v5l2 2H4zM10 21h4",
+  check: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM8 12l3 3 5-6",
+  list: "M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01",
+};
+const icon = (name) => `<span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${ICONS[name]}"/></svg></span>`;
+
 /* ---------- Каркас ---------- */
 
 const root = document.getElementById("root");
@@ -239,19 +252,19 @@ function nav() {
   let items;
   if (S.role === "translator") {
     const incoming = S.requests.filter((r) => r.profileId === "t1" && (r.status === "SENT" || r.status === "AWAITING_RESPONSE")).length;
-    items = [["/app", "Рабочий стол"], ["/app/requests", "Запросы", incoming], ["/app/orders", "Заказы"], ["/app/calendar", "Календарь"],
-      ["/app/profile", "Мой профиль"], ["/app/notifications", "Уведомления", unread]];
+    items = [["/app", "Рабочий стол", "home"], ["/app/requests", "Запросы", "inbox", incoming], ["/app/orders", "Заказы", "briefcase"],
+      ["/app/calendar", "Календарь", "calendar"], ["/app/profile", "Мой профиль", "user"], ["/app/notifications", "Уведомления", "bell", unread]];
   } else if (S.role === "admin") {
-    items = [["/app", "Рабочий стол"], ["/app/admin/memberships", "Заявки на роль", S.pendingStatus === "PENDING" ? 1 : 0],
-      ["/app/search", "Реестр"], ["/app/admin/audit", "Журнал действий"], ["/app/notifications", "Уведомления", unread]];
+    items = [["/app", "Рабочий стол", "home"], ["/app/admin/memberships", "Заявки на роль", "check", S.pendingStatus === "PENDING" ? 1 : 0],
+      ["/app/search", "Реестр", "search"], ["/app/admin/audit", "Журнал действий", "list"], ["/app/notifications", "Уведомления", "bell", unread]];
   } else {
-    items = [["/app", "Рабочий стол"], ["/app/search", "Найти переводчика"], ["/app/requests", "Мои запросы"],
-      ["/app/calendar", "Мероприятия"], ["/app/notifications", "Уведомления", unread]];
+    items = [["/app", "Рабочий стол", "home"], ["/app/search", "Найти переводчика", "search"], ["/app/requests", "Мои запросы", "inbox"],
+      ["/app/calendar", "Мероприятия", "calendar"], ["/app/notifications", "Уведомления", "bell", unread]];
   }
   const path = route().path;
-  return items.map(([href, label, count]) => {
+  return items.map(([href, label, ico, count]) => {
     const active = href === "/app" ? path === "/app" : path === href || path.startsWith(href + "/");
-    return `<a href="#${href}" class="${active ? "active" : ""}"><span>${label}</span>${count ? `<span class="count">${count}</span>` : ""}</a>`;
+    return `<a href="#${href}" class="${active ? "active" : ""}"${active ? ' aria-current="page"' : ""}>${icon(ico)}<span class="lbl">${label}</span>${count ? `<span class="count">${count}</span>` : ""}</a>`;
   }).join("");
 }
 
@@ -259,11 +272,10 @@ function shell(content) {
   return `<div class="shell">
     <aside class="sidebar">
       <a href="#/app" class="brand">NewWorld</a>
-      <nav class="nav">${nav()}<a href="#/login" class="mobile-only"><span>Сменить роль</span></a></nav>
+      <nav class="nav">${nav()}</nav>
       <div class="sidebar-foot">
-        <div style="font-weight:600">${esc(me().name)}</div>
-        <div class="muted">${esc(me().role)}</div>
-        <a href="#/login" style="display:inline-block;margin-top:8px">Сменить роль</a>
+        <div class="who"><div style="font-weight:600">${esc(me().name)}</div><div class="muted">${esc(me().role)}</div></div>
+        <a href="#/login" class="btn secondary small">Сменить роль</a>
       </div>
     </aside>
     <main class="main">${content}</main>
